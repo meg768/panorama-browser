@@ -1,6 +1,6 @@
 # Context
 
-- 2026-11-01: Use this existing clone in `/Users/magnus/Documents/GitHub/panorama-browser`.
+- 2026-11-02: Use Magnus's clone in `/Users/magnus/GitHub/panorama-browser`.
   Version 0.1 uses plain HTML/CSS/JavaScript and a Python standard-library manifest
   generator. No PHP or package installation. Commit and push are authorized.
 - 2026-11-01: Target is `root@pi-kato`, `/var/www/html/panorama`,
