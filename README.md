@@ -1,66 +1,79 @@
-# Panorama Browser 0.1
+# Panorama Browser 0.2
 
-A responsive static list of panorama HTML files. Plain HTML, CSS and JavaScript;
-Python's standard library generates the list. No PHP, packages, framework,
-database, build step, thumbnails, search or filtering.
+A responsive static gallery: plain HTML/CSS/JavaScript, a Python manifest
+and small cached JPEG thumbnails. No PHP, database, framework, permanent backend,
+search, filtering or build step.
 
-## How it works
+## Thumbnails
 
-`generate_manifest.py` recursively scans the panorama directory, including its
-root. It skips symbolic links and the gallery's own root `index.html`, while
-including panorama files named `index.html` in subdirectories. HTML extensions
-are matched case insensitively. Entries are sorted by relative path, and each URL
-component is encoded separately. The browser uses `textContent` for filenames.
-Only relative paths appear in the public JSON.
+Headless Chromium opens each original HTML export and runs its own WebGL code:
+embedded JPEGs, saved yaw/pitch/vertical FOV, color adjustments and repair/retouch
+layers. It waits for every image and rendering, then captures a **640 × 360 JPEG
+at quality 78**. The fixed 16:9 viewport determines the aspect ratio; camera
+parameters are never changed. Gallery images are shown without cropping.
+Clicking opens the original interactive HTML.
 
-The generator replaces `panoramas.json` atomically and leaves it untouched when
-the list is unchanged. Cron runs it every minute. An open browser fetches the
-manifest every minute without caching, so new files appear within approximately
-two minutes without reloading the page. Failed requests keep the previous list
-and retry on the next interval.
+This reuses the existing renderer instead of implementing another projection
+engine. `render_thumbnail.js` controls Chromium through a private DevTools pipe
+using Node's built-in modules. Each browser runs as www-data, not root, with its
+sandbox disabled for this unprivileged batch invocation. Upload trusted exports
+only. The browser and temporary profile are removed after capture; no persistent
+browser service or open debugging port is introduced.
 
-## Server and deployment
+Thumbnail filenames hash the relative path, full source contents and renderer
+version/dimensions. Existing images are reused; changed HTML gets a new image URL,
+including changes to pixels, camera or adjustments. Previous thumbnails are
+retained. Bump the renderer version in generate_manifest.py when changing capture
+behavior. Visitors fetch static JPEGs with lazy loading, never full-resolution
+panorama HTML until they open a card.
 
+## Automatic updates
+
+The generator scans root and nested HTML files without following symlinks. It
+excludes only the gallery's root index.html and generated thumbnails directory.
+Paths are sorted, URL components encoded separately, and captions use textContent.
+Public JSON exposes only relative paths.
+
+Existing cron runs every minute. A lock prevents overlapping batches. JSON is
+published atomically and is not rewritten if unchanged. Newly added or changed
+files appear after scanning and rendering, then the browser's next one-minute
+refresh. Incomplete/invalid exports remain listed and retry on the next cron run;
+errors go to stderr, never to the public page. The browser keeps its previous list
+if a request fails.
+
+## Deployment
+
+- Local repository: `/Users/magnus/GitHub/panorama-browser`
 - Site: https://panorama.egelberg.se
-- SSH: `root@pi-kato`
-- Document root: `/var/www/html/panorama`
-- Python: existing `/usr/bin/python3` (3.11).
-- Generator: `/usr/local/lib/panorama-browser/generate_manifest.py`
-- Schedule: `/etc/cron.d/panorama-browser`
+- SSH: `root@pi-kato`; document root: `/var/www/html/panorama`
+- Existing runtimes: Python 3.11 and Node 18.
+- Added software: Chromium and system libraries via Debian/Raspberry Pi packages,
+  using `apt-get install --no-install-recommends chromium`.
+- No Python/npm packages, Pillow or NumPy are required.
 
-The existing tennis frontend deploys static files with `scp` to its own Apache
-document root. This project follows that convention without its build tools or
-API. Apache already prioritizes `index.html`; no VirtualHost changes are needed.
-
-Before deploying, back up existing files that would be replaced. Never delete or
-synchronize away panorama files. Copy only `index.html` into the public document
-root and install the generator outside it. Copy `deployment/panorama-browser.cron`
-to `/etc/cron.d/panorama-browser` with owner root and mode 0644. Run the generator
-once before publishing `index.html`:
+Back up files before replacing them. Install generate_manifest.py and
+render_thumbnail.js, root-owned with mode 0644, into
+`/usr/local/lib/panorama-browser/`, outside the public directory. Run:
 
 ```sh
 python3 /usr/local/lib/panorama-browser/generate_manifest.py /var/www/html/panorama
 ```
 
-Cron automatically reads the schedule; no new service or Apache reload is needed.
-Do not deploy the repository, tests or documentation into the public directory.
+Verify the manifest and thumbnails before copying index.html into the document
+root. Keep `/etc/cron.d/panorama-browser` unchanged (source in deployment/).
+Apache already prioritizes index.html: no VirtualHost, certificate or PanoWizard
+changes are needed. Never synchronize away originals or deploy Git metadata,
+tests or documentation into the public directory.
 
 ## Verification
 
 ```sh
 python3 -m unittest discover -s tests -v
+node --check render_thumbnail.js
 ```
 
-Tests cover recursive discovery, root/nested index exclusion rules, Unicode and
-special URL characters, symlink files/directories/loops, empty directories, output
-permissions, idempotence and added/removed files. After deployment verify all
-panorama links, HTTPS, cron discovery of a temporary test file, and checksums of
-the original panoramas, Apache configuration and certificates.
-
-Initial deployment verified all 36 original links over HTTPS, including nested
-and Swedish paths, and the page at desktop and 390px mobile widths. Real cron
-discovered a temporary uploaded panorama in 28 seconds; it was then removed.
-Original panorama checksums, Apache files, certificates and installed package
-versions were unchanged. Other sites returned the same statuses as before
-(cosmic-unicorn's root already returned 404). Apache configtest passed with its
-existing global ServerName warning.
+Tests cover recursive discovery, Unicode/URL encoding, symlinks, exclusions,
+empty directories, thumbnail caching and content-change regeneration, and failure
+handling. Production verification covers all original links and 36 static
+thumbnails, original camera rendering, unchanged originals and Apache files,
+automatic discovery and desktop/mobile layout.

@@ -2,8 +2,10 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 
-from generate_manifest import generate
+from generate_manifest import generate, thumbnail
 
 
 class ManifestTests(unittest.TestCase):
@@ -46,6 +48,30 @@ class ManifestTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             generate(temporary)
             self.assertEqual(json.loads((Path(temporary) / "panoramas.json").read_text()), [])
+
+    def test_thumbnail_cache_and_content_change(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'sälen.html'
+            source.write_text('first export')
+            with patch('generate_manifest.subprocess.run', return_value=SimpleNamespace(stdout=b'\xff\xd8test\xff\xd9')) as render:
+                first = thumbnail(root, source.name, Path('/renderer.js'))
+                self.assertEqual(first, thumbnail(root, source.name, Path('/renderer.js')))
+                self.assertEqual(render.call_count, 1)
+                source.write_text('changed export')
+                second = thumbnail(root, source.name, Path('/renderer.js'))
+                self.assertNotEqual(first, second)
+                self.assertEqual(render.call_count, 2)
+                self.assertEqual((root / second[2:]).stat().st_mode & 0o777, 0o644)
+
+    def test_render_failure_keeps_panorama_discoverable(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'panorama.html').write_text('incomplete upload')
+            with patch('generate_manifest.thumbnail', side_effect=ValueError('not ready')):
+                generate(root, Path('/renderer.js'))
+            entries = json.loads((root / 'panoramas.json').read_text())
+            self.assertEqual(entries, [{'path':'panorama.html', 'url':'./panorama.html'}])
 
 
 if __name__ == "__main__":

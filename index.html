@@ -14,11 +14,11 @@
         #status { margin: 0; color: #52676f; line-height: 1.6; }
         ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 12px; padding: 0; margin: 0; list-style: none; }
         li { min-width: 0; }
-        a { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 100%; min-height: 80px; padding: 20px; border: 1px solid #d8e2df; border-radius: 12px; background: #fff; color: #174e46; text-decoration: none; line-height: 1.5; }
+        a { display: block; height: 100%; border: 1px solid #d8e2df; border-radius: 12px; overflow: hidden; background: #fff; color: #174e46; text-decoration: none; line-height: 1.5; }
         a:hover { background: #eaf4ef; border-color: #8bafa4; }
         a:focus-visible { outline: 3px solid #247a6b; outline-offset: 3px; }
-        .path { overflow-wrap: anywhere; }
-        .arrow { flex: none; font-size: 1.25rem; }
+        .path { display: block; padding: 16px; overflow-wrap: anywhere; }
+        .thumbnail { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: contain; background: #e3ebe7; }
     </style>
 </head>
 <body>
@@ -50,11 +50,18 @@
                     const path = document.createElement('span');
                     path.className = 'path';
                     path.textContent = entry.path;
-                    const arrow = document.createElement('span');
-                    arrow.className = 'arrow';
-                    arrow.setAttribute('aria-hidden', 'true');
-                    arrow.textContent = '↗';
-                    link.append(path, arrow);
+                    if (entry.thumbnail) {
+                        const image = document.createElement('img');
+                        image.className = 'thumbnail';
+                        image.src = entry.thumbnail;
+                        image.alt = '';
+                        image.width = 640;
+                        image.height = 360;
+                        image.loading = 'lazy';
+                        image.decoding = 'async';
+                        link.append(image);
+                    }
+                    link.append(path);
                     item.append(link);
                     fragment.append(item);
                 }
