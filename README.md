@@ -23,7 +23,14 @@ only the first character of each segment is capitalized. Root files omit the
 location line. Without a JPEG, the caption remains without an image. If an image fails
 to load, the image is removed while the link remains usable. PanoWizard's
 optional Generate thumbnail publishes a matching 640 × 360 JPEG. Existing photos
-are displayed in the original responsive card layout, without cropping.
+are displayed in a responsive card layout, without cropping.
+
+The gallery uses a fixed dark graphite theme regardless of browser or OS theme.
+The public page opens directly on the photos, with no visible site heading,
+count badge or divider. Loading, empty-gallery and error messages remain visible
+when needed. Cards use three columns on desktop,
+two on smaller screens and one on phones. Subtle hover feedback, keyboard focus
+and reduced-motion preferences are supported.
 
 ## Apache and deployment
 

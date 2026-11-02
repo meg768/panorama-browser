@@ -1,5 +1,10 @@
 # Context
 
+- 2026-11-02: Magnus explicitly authorized check-in of both projects. This
+  checkpoint contains the deployed always-dark, headerless gallery, responsive
+  layout, status handling, tests and documentation. Fixture and live tests pass
+  for all 37 panorama/companion-JPEG pairs. No server changes in this checkpoint.
+
 - 2026-11-02: Canonical clone: `/Users/magnus/GitHub/panorama-browser`.
   Server `root@pi-kato`, document root `/var/www/html/panorama`, public gallery
   `https://panorama.egelberg.se`. Preserve original panorama HTML/URLs, directory
@@ -60,3 +65,24 @@
   live checks of 37 HTML/JPEG pairs, whitespace and credential-pattern checks
   passed. Checkpoint includes static discovery, companion images, legacy cleanup,
   Apache alias instructions, readable captions, current tests and documentation.
+- 2026-11-02: Magnus prefers an always-dark gallery regardless of browser/OS
+  light/dark mode and authorized artistic layout changes. Deployed CSS-only
+  graphite design: fixed color-scheme dark, subtle dark cards, off-white titles,
+  muted location lines, smaller heading, compact count badge and more image
+  space. Three desktop columns, two at <=800px, one at <=560px. Preserve full
+  16:9 thumbnails and two-line captions; subtle hover lift, visible keyboard
+  focus and reduced-motion support. HTML content and JavaScript are unchanged.
+  Live checks passed for 37 HTML/JPEG pairs; browser decoded all 37 images and
+  showed no horizontal overflow at 750px/390px. Panorama/JPEG/Apache hashes
+  unchanged against the start-of-task backup. Backup:
+  `/root/backups/panorama-dark-gallery-20261102-202936/index.html`.
+  Existing root duplicates are now in the server's skräp/ directory; discovery
+  still includes them, with no new directory exclusions. No commit/push made.
+- 2026-11-02: Magnus wants a simple public panorama gallery with no app title.
+  Removed the entire visible header (Panorama Browser heading, count badge and
+  divider); photos now start directly at the page padding. Card captions remain.
+  Generic document title is Panoramas. Successful loading hides the count;
+  loading, empty-gallery and error/partial-result messages remain visible.
+  Tests cover hidden success status and visible empty/error states. Live/browser
+  checks passed for all 37 panorama/JPEG pairs; original file and Apache hashes
+  unchanged. Backup: `/root/backups/panorama-headerless-20261102-204159/index.html`.

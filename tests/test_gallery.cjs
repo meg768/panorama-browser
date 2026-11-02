@@ -6,7 +6,7 @@ const source = fs.readFileSync(require('node:path').join(__dirname, '../index.ht
 
 // Minimal DOM adapter for testing discovery and rendering without dependencies.
 class Element {
-    constructor(tag) { this.tag = tag; this.children = []; this.textContent = ''; }
+    constructor(tag) { this.tag = tag; this.children = []; this.textContent = ''; this.hidden = false; }
     append(...children) { this.children.push(...children); }
     replaceChildren(fragment) { this.children = fragment.children; }
     addEventListener() {}
@@ -34,7 +34,7 @@ async function run(fetcher) {
         path: decodeURIComponent(new URL(item.children[0].href).pathname.slice(1)),
         title: item.children[0].children.find(child => child.className === 'caption').children.find(child => child.className === 'title').textContent,
         location: item.children[0].children.find(child => child.className === 'caption').children.find(child => child.className === 'location')?.textContent
-    })), status: status.textContent };
+    })), status: status.textContent, statusHidden: status.hidden };
 }
 const listing = hrefs => '<h1>Index of /</h1>' + hrefs.map(href => `<a href="${href}">file</a>`).join('');
 function fixture(pages) {
@@ -59,6 +59,7 @@ function fixture(pages) {
     assert.equal(swedish.image, 'https://panorama.egelberg.se/2008/s%C3%A4len%20%26%23%25.jpg');
     assert.equal(result.cards.find(c => c.path === 'missing.html').image, undefined);
     assert.match(result.status, /Some folders/);
+    assert.equal(result.statusHidden, false);
     assert.match((await run(fixture({}))).status, /Unable to load/);
     assert.match((await run(fixture({'/_panorama-list/': '<h1>Wrong page</h1>'}))).status, /Unable to load/);
     const longTitle = 'en-mycket-lång_titel-med-många-ord-och-mIxED-case';
@@ -72,6 +73,10 @@ function fixture(pages) {
         '/_panorama-list/2009/lund/lundag%C3%A5rd/': listing(['uppe-vid-backen.html'])
     }));
     assert.equal(captions.cards.length, 5);
+    assert.equal(captions.statusHidden, true);
+    const empty = await run(fixture({'/_panorama-list/': listing([])}));
+    assert.equal(empty.status, 'No panoramas yet.');
+    assert.equal(empty.statusHidden, false);
     const are = captions.cards.find(c => c.path.endsWith('platt-fall.html'));
     assert.equal(are.location, '2019 · Åre · Vid liften');
     assert.equal(are.title, 'Platt fall');
