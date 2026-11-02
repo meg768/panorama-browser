@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Panorama Browser X</title>
+    <title>Panorama Browser</title>
     <style>
         :root { color-scheme: light; font-family: system-ui, sans-serif; color: #182b32; background: #f3f6f5; }
         * { box-sizing: border-box; }
@@ -17,14 +17,17 @@
         a { display: block; height: 100%; border: 1px solid #d8e2df; border-radius: 12px; overflow: hidden; background: #fff; color: #174e46; text-decoration: none; line-height: 1.5; }
         a:hover { background: #eaf4ef; border-color: #8bafa4; }
         a:focus-visible { outline: 3px solid #247a6b; outline-offset: 3px; }
-        .path { display: block; padding: 16px; overflow-wrap: anywhere; }
+        .caption { display: block; padding: 16px; overflow-wrap: anywhere; }
+        .location { display: block; font-size: .875rem; color: #52676f; }
+        .title { display: block; font-size: 1rem; font-weight: 600; }
+        .location + .title { margin-top: 4px; }
         .thumbnail { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: contain; background: #e3ebe7; }
     </style>
 </head>
 <body>
 <main>
     <header>
-        <h1>Panorama Browser X</h1>
+        <h1>Panorama Browser</h1>
         <p id="status" role="status">Loading panoramas…</p>
     </header>
     <noscript>Enable JavaScript to display the panorama list.</noscript>
@@ -33,50 +36,137 @@
 <script>
     const list = document.getElementById('panoramas');
     const status = document.getElementById('status');
-    let previousManifest = '';
+    const galleryRoot = new URL('./', location.href);
+    const listingRoot = new URL('/_panorama-list/', location.origin);
+
+    function childLink(href, directory) {
+        if (!href || href.startsWith('?') || href.startsWith('#')) return null;
+        const url = new URL(href, directory);
+        if (url.origin !== listingRoot.origin || url.search || url.hash ||
+            !url.pathname.startsWith(directory.pathname)) return null;
+        const isDirectory = url.pathname.endsWith('/');
+        const encoded = url.pathname.slice(directory.pathname.length).replace(/\/$/, '');
+        if (!encoded || encoded.includes('/')) return null;
+        const name = decodeURIComponent(encoded);
+        if (!name || name === '.' || name === '..' || /[/\\]/.test(name)) return null;
+        return { name, isDirectory };
+    }
+
+    async function readDirectory(parts) {
+        const relative = parts.map(encodeURIComponent).join('/');
+        const directory = new URL(relative ? relative + '/' : '', listingRoot);
+        directory.search = '?F=0';
+        const response = await fetch(directory, { cache: 'no-store', signal: AbortSignal.timeout(15000) });
+        if (!response.ok || new URL(response.url).pathname !== directory.pathname ||
+            new URL(response.url).origin !== listingRoot.origin) throw new Error('Directory unavailable');
+        const document = new DOMParser().parseFromString(await response.text(), 'text/html');
+        if (!document.querySelector('h1')?.textContent.startsWith('Index of '))
+            throw new Error('Directory listing expected');
+        const children = new Map();
+        for (const anchor of document.querySelectorAll('a[href]')) {
+            try {
+                const child = childLink(anchor.getAttribute('href'), directory);
+                if (child) children.set(child.name, child);
+            } catch { /* Ignore malformed URL encodings without losing valid entries. */ }
+        }
+        return children;
+    }
+
+    function captionForPath(path) {
+        const parts = path.split('/');
+        const filename = parts.pop().replace(/\.html$/i, '');
+        const readable = segment => segment.replace(/[-_]/g, ' ')
+            .replace(/^./u, first => first.toUpperCase());
+        return { location: parts.map(readable).join(' · '), title: readable(filename) };
+    }
+
+    function render(entries, errors) {
+        const fragment = document.createDocumentFragment();
+        entries.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+        for (const entry of entries) {
+            const item = document.createElement('li');
+            const link = document.createElement('a');
+            link.href = entry.url;
+            const caption = document.createElement('span');
+            caption.className = 'caption';
+            const text = captionForPath(entry.path);
+            if (text.location) {
+                const location = document.createElement('span');
+                location.className = 'location';
+                location.textContent = text.location;
+                caption.append(location);
+            }
+            const title = document.createElement('span');
+            title.className = 'title';
+            title.textContent = text.title;
+            caption.append(title);
+            if (entry.thumbnail) {
+                const image = document.createElement('img');
+                image.className = 'thumbnail';
+                image.src = entry.thumbnail;
+                image.alt = '';
+                image.width = 640;
+                image.height = 360;
+                image.loading = 'lazy';
+                image.decoding = 'async';
+                image.addEventListener('error', () => image.remove(), { once: true });
+                link.append(image);
+            }
+            link.append(caption);
+            item.append(link);
+            fragment.append(item);
+        }
+        list.replaceChildren(fragment);
+        const count = entries.length === 0 ? 'No panoramas yet.' :
+            entries.length + (entries.length === 1 ? ' panorama' : ' panoramas');
+        status.textContent = errors ? count + ' — Some folders could not be read. Refresh to retry.' : count;
+    }
 
     async function loadPanoramas() {
+        const queue = [[]];
+        const visited = new Set(['']);
+        const entries = [];
+        let errors = 0;
         try {
-            const response = await fetch('./panoramas.json', { cache: 'no-store' });
-            if (!response.ok) throw new Error('Manifest unavailable');
-            const entries = await response.json();
-            const fingerprint = JSON.stringify(entries);
-            if (fingerprint !== previousManifest) {
-                const fragment = document.createDocumentFragment();
-                for (const entry of entries) {
-                    const item = document.createElement('li');
-                    const link = document.createElement('a');
-                    link.href = entry.url;
-                    const path = document.createElement('span');
-                    path.className = 'path';
-                    path.textContent = entry.path;
-                    if (entry.thumbnail) {
-                        const image = document.createElement('img');
-                        image.className = 'thumbnail';
-                        image.src = entry.thumbnail;
-                        image.alt = '';
-                        image.width = 640;
-                        image.height = 360;
-                        image.loading = 'lazy';
-                        image.decoding = 'async';
-                        link.append(image);
+            while (queue.length) {
+                const batch = queue.splice(0, 4);
+                const results = await Promise.allSettled(batch.map(readDirectory));
+                for (let i = 0; i < results.length; i++) {
+                    const parts = batch[i];
+                    const result = results[i];
+                    if (result.status === 'rejected') {
+                        if (parts.length === 0) throw result.reason;
+                        errors++;
+                        continue;
                     }
-                    link.append(path);
-                    item.append(link);
-                    fragment.append(item);
+                    const children = result.value;
+                    for (const child of children.values()) {
+                        const childParts = [...parts, child.name];
+                        const path = childParts.join('/');
+                        if (child.isDirectory) {
+                            if (visited.has(path)) continue;
+                            if (childParts.length > 32 || visited.size >= 1000) { errors++; continue; }
+                            visited.add(path);
+                            queue.push(childParts);
+                        } else if (/\.html$/i.test(child.name) && path !== 'index.html') {
+                            const url = new URL(childParts.map(encodeURIComponent).join('/'), galleryRoot).href;
+                            const jpgName = child.name.slice(0, -5) + '.jpg';
+                            const jpg = children.get(jpgName);
+                            const thumbnail = jpg && !jpg.isDirectory ?
+                                new URL([...parts, jpgName].map(encodeURIComponent).join('/'), galleryRoot).href :
+                                undefined;
+                            entries.push({ path, url, thumbnail });
+                        }
+                    }
                 }
-                list.replaceChildren(fragment);
-                previousManifest = fingerprint;
             }
-            status.textContent = entries.length === 0 ? 'No panoramas yet.' :
-                `${entries.length} ${entries.length === 1 ? 'panorama' : 'panoramas'}`;
-        } catch (error) {
-            status.textContent = 'Unable to update the panorama list. Retrying shortly.';
+            render(entries, errors);
+        } catch {
+            status.textContent = 'Unable to load panoramas. Refresh to retry.';
         }
     }
 
     loadPanoramas();
-    setInterval(loadPanoramas, 60000);
 </script>
 </body>
 </html>

@@ -1,2 +1,0 @@
-# Refresh the manifest every minute using the existing cron service.
-* * * * * root /usr/bin/python3 /usr/local/lib/panorama-browser/generate_manifest.py /var/www/html/panorama

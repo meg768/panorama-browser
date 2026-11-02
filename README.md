@@ -1,79 +1,101 @@
-# Panorama Browser 0.2
+# Panorama Browser
 
-A responsive static gallery: plain HTML/CSS/JavaScript, a Python manifest
-and small cached JPEG thumbnails. No PHP, database, framework, permanent backend,
-search, filtering or build step.
+A static HTML/CSS/JavaScript gallery using Apache's existing directory listings.
+Refresh the browser after SFTP uploads. No build, backend application, database,
+scheduler, generated file list or server-side image renderer is required.
 
-## Thumbnails
+## Files and thumbnails
 
-Headless Chromium opens each original HTML export and runs its own WebGL code:
-embedded JPEGs, saved yaw/pitch/vertical FOV, color adjustments and repair/retouch
-layers. It waits for every image and rendering, then captures a **640 × 360 JPEG
-at quality 78**. The fixed 16:9 viewport determines the aspect ratio; camera
-parameters are never changed. Gallery images are shown without cropping.
-Clicking opens the original interactive HTML.
+The browser discovers `.html` files recursively and excludes only the gallery's
+own root `index.html`. Nested `index.html` panoramas remain eligible. Clicking a
+card opens the original HTML at its unchanged URL.
 
-This reuses the existing renderer instead of implementing another projection
-engine. `render_thumbnail.js` controls Chromium through a private DevTools pipe
-using Node's built-in modules. Each browser runs as www-data, not root, with its
-sandbox disabled for this unprivileged batch invocation. Upload trusted exports
-only. The browser and temporary profile are removed after capture; no persistent
-browser service or open debugging port is introduced.
+A JPEG with the same basename in the same directory is the thumbnail:
 
-Thumbnail filenames hash the relative path, full source contents and renderer
-version/dimensions. Existing images are reused; changed HTML gets a new image URL,
-including changes to pixels, camera or adjustments. Previous thumbnails are
-retained. Bump the renderer version in generate_manifest.py when changing capture
-behavior. Visitors fetch static JPEGs with lazy loading, never full-resolution
-panorama HTML until they open a card.
-
-## Automatic updates
-
-The generator scans root and nested HTML files without following symlinks. It
-excludes only the gallery's root index.html and generated thumbnails directory.
-Paths are sorted, URL components encoded separately, and captions use textContent.
-Public JSON exposes only relative paths.
-
-Existing cron runs every minute. A lock prevents overlapping batches. JSON is
-published atomically and is not rewritten if unchanged. Newly added or changed
-files appear after scanning and rendering, then the browser's next one-minute
-refresh. Incomplete/invalid exports remain listed and retry on the next cron run;
-errors go to stderr, never to the public page. The browser keeps its previous list
-if a request fails.
-
-## Deployment
-
-- Local repository: `/Users/magnus/GitHub/panorama-browser`
-- Site: https://panorama.egelberg.se
-- SSH: `root@pi-kato`; document root: `/var/www/html/panorama`
-- Existing runtimes: Python 3.11 and Node 18.
-- Added software: Chromium and system libraries via Debian/Raspberry Pi packages,
-  using `apt-get install --no-install-recommends chromium`.
-- No Python/npm packages, Pillow or NumPy are required.
-
-Back up files before replacing them. Install generate_manifest.py and
-render_thumbnail.js, root-owned with mode 0644, into
-`/usr/local/lib/panorama-browser/`, outside the public directory. Run:
-
-```sh
-python3 /usr/local/lib/panorama-browser/generate_manifest.py /var/www/html/panorama
+```text
+2008/sälen/backen/panorama.html
+2008/sälen/backen/panorama.jpg
 ```
 
-Verify the manifest and thumbnails before copying index.html into the document
-root. Keep `/etc/cron.d/panorama-browser` unchanged (source in deployment/).
-Apache already prioritizes index.html: no VirtualHost, certificate or PanoWizard
-changes are needed. Never synchronize away originals or deploy Git metadata,
-tests or documentation into the public directory.
+Cards show parent directories on a muted location line and the filename as a
+stronger title. Hyphens and underscores become spaces, .html is removed, and
+only the first character of each segment is capitalized. Root files omit the
+location line. Without a JPEG, the caption remains without an image. If an image fails
+to load, the image is removed while the link remains usable. PanoWizard's
+optional Generate thumbnail publishes a matching 640 × 360 JPEG. Existing photos
+are displayed in the original responsive card layout, without cropping.
+
+## Apache and deployment
+
+- Clone: `/Users/magnus/GitHub/panorama-browser`
+- Server: `root@pi-kato`
+- Document root: `/var/www/html/panorama`
+- Gallery: https://panorama.egelberg.se
+
+Keep `deployment/panorama-listing.conf` inside the existing panorama HTTPS
+VirtualHost. It provides `/_panorama-list/`, scoped `DirectoryIndex disabled`
+and `Cache-Control: no-store`. Existing `Options Indexes` and UTF-8 autoindex
+settings are used. The homepage still serves `index.html`; original panorama
+URLs, subdirectories, certificates and HTTP-to-HTTPS redirects remain unchanged.
+Reserve `/_panorama-list/` as a virtual namespace rather than an upload directory.
+
+Deploy only `index.html`, uploading to a temporary name and renaming into place.
+Keep originals and companion JPEGs intact. Do not deploy Git metadata, tests,
+documentation or backup archives to the public directory. Run
+`apache2ctl configtest` before any future Apache reload.
+
+## Discovery safeguards
+
+Uses browser-native `fetch`, `DOMParser` and `URL`. Link attributes determine
+paths; each filename is decoded once and individual components are URL-encoded.
+Captions use `textContent`. Swedish characters, reserved URL characters and
+case-sensitive directories such as `Lissabon` and `lissabon` are preserved.
+
+Only immediate children on the same origin are accepted. Parent, query and
+fragment links, malformed encodings and separators in decoded names are ignored.
+Responses must have the expected URL and an Apache directory-listing heading.
+Four requests run concurrently, with 15 seconds per request, at most 1,000
+directories and 32 levels. Failures or limits produce a partial-result message;
+a root failure produces a loading error. There is no polling timer. Listings
+bypass browser caching; companion JPEGs retain normal HTTP image caching.
+
+Directory listings expose public filenames. Keep private files outside the
+public tree. Apache currently permits FollowSymLinks; client-side discovery
+cannot identify physical symlinks. Upload real files and directories. Traversal
+limits bound loops. The gallery depends on standard Apache autoindex HTML.
 
 ## Verification
 
+Node is used only for optional developer tests, not by the deployed gallery:
+
 ```sh
-python3 -m unittest discover -s tests -v
-node --check render_thumbnail.js
+node tests/test_gallery.cjs
+PANORAMA_EXPECTED_COUNT=37 node tests/test_gallery.cjs --live
 ```
 
-Tests cover recursive discovery, Unicode/URL encoding, symlinks, exclusions,
-empty directories, thumbnail caching and content-change regeneration, and failure
-handling. Production verification covers all original links and 36 static
-thumbnails, original camera rendering, unchanged originals and Apache files,
-automatic discovery and desktop/mobile layout.
+Fixture tests cover recursion, nested index files, UTF-8 and reserved characters,
+URL boundaries, malformed encodings, matching JPGs, absent images and load errors.
+Live verification checks unique entries, same-basename image URLs and HTTP 200
+for every original HTML and thumbnail. Browser checks confirm actual decoding.
+The expected count is a verification snapshot, not a runtime gallery setting.
+
+## Migration and rollback
+
+On 2026-11-02, 36 former cached thumbnails were copied byte-for-byte alongside
+their HTML files, with exclusive creation and no overwrite. The independently
+published `2026/badrummet.html` and its JPEG were preserved, making 37 panoramas.
+No original HTML was modified and no image was regenerated.
+
+Before cleanup, the full site, old scripts, disabled scheduler file and panorama
+Apache configuration were archived on pi-kato at:
+`/root/backups/panorama-final-cleanup-20261102-180020/before-cleanup.tar`.
+The same directory contains the original HTML hashes, pre-migration inventory,
+image-copy records and checksums, original package list and removal log.
+The two removed browser packages were also saved there as exact-version DEBs.
+All earlier backups remain outside the public directory.
+
+Rollback can restore the archived files with their original paths; the archived
+scheduler is disabled. Reinstall the saved browser packages only if restoring
+the old renderer. Copy records distinguish the 36 added JPEGs from pre-existing
+files. Keep those JPEGs unless an exact reversal is required, and never remove
+subsequent uploads. A repository snapshot was also taken before local cleanup.
